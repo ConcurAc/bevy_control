@@ -198,27 +198,27 @@ pub enum CameraView3d {
 /// Updates camera position and rotation each frame based on controller settings
 ///
 /// # Arguments
-/// * `camera_controllers` - Query for camera controller components and their transforms
-/// * `transforms` - Query for camera transforms to modify
+/// * `controller_query` - Query for camera controller components and their transforms
+/// * `camera_query` - Query for camera transforms to modify
 /// * `time` - Resource providing frame timing information
 /// * `spatial_query` - Optional collision detection system (avian3d feature only)
 pub(crate) fn update_camera3d(
-    mut camera_controllers: Query<
+    mut controller_query: Query<
         (&Transform, &CameraController3d, &mut DeltaBuffer),
         Without<Camera3d>,
     >,
-    mut transforms: Query<&mut Transform, With<Camera3d>>,
+    mut camera_query: Query<&mut Transform, With<Camera3d>>,
     time: Res<Time>,
     #[cfg(feature = "avian3d")] spatial_query: SpatialQuery,
 ) {
-    for (controller_transform, controller, mut delta_buffer) in camera_controllers.iter_mut() {
+    for (controller_transform, controller, mut delta_buffer) in controller_query.iter_mut() {
         // skip if camera is manually controlled
         if controller.view == CameraView3d::Manual {
             continue;
         }
 
-        let mut camera_transform = match transforms.get_mut(controller.camera) {
-            Ok(transform) => transform,
+        let mut camera_transform = match camera_query.get_mut(controller.camera) {
+            Ok(components) => components,
             Err(_) => continue,
         };
 
