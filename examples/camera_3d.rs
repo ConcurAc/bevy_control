@@ -175,7 +175,8 @@ fn setup_ui(mut commands: Commands) {
                 2: Follow View\n\
                 8 (hold): Manual Pan Camera\n\
                 9 (hold): Manual Rotate Camera\n\
-                0: Manual View Mode",
+                0: Manual View Mode\n\
+                W/A/S/D or Arrow Keys: Move controller",
         ));
     });
 }
