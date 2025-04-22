@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 
+#[cfg(feature = "2d")]
+use super::controller2d::update_camera2d;
 #[cfg(feature = "3d")]
 use super::controller3d::update_camera3d;
 
@@ -12,6 +14,8 @@ impl Plugin for CameraPlugin {
         app.add_systems(
             PostUpdate,
             (
+                #[cfg(feature = "2d")]
+                update_camera2d.before(TransformSystem::TransformPropagate),
                 #[cfg(feature = "3d")]
                 update_camera3d.before(TransformSystem::TransformPropagate),
             ),
