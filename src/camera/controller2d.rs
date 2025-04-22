@@ -147,22 +147,21 @@ pub(crate) fn update_camera2d(
         // get time delta
         let dt = time.delta_secs();
 
+        // handle zoom
+        if controller.decay_rate.is_finite() {
+            projection
+                .scale
+                .smooth_nudge(&controller.scale, controller.decay_rate, dt);
+        } else {
+            projection.scale = controller.scale;
+        }
+
         // calculate target position with offset
         let target_translation = controller_transform.translation + controller.offset;
 
         match &controller.view {
             CameraView2d::Follow { distance } => {
                 let difference = target_translation - camera_transform.translation;
-
-                // Handle zoom
-
-                if controller.decay_rate.is_finite() {
-                    projection
-                        .scale
-                        .smooth_nudge(&controller.scale, controller.decay_rate, dt);
-                } else {
-                    projection.scale = controller.scale;
-                }
 
                 let current_displacement = difference.xy();
                 let current_distance = current_displacement.length();
