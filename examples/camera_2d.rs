@@ -70,9 +70,11 @@ fn switch_view(
     for (_entity, mut controller, mut delta_buffer) in controllers.iter_mut() {
         if input.just_pressed(KeyCode::Digit1) {
             controller.view = CameraView2d::Follow { distance: 1.0 };
-        } else if input.pressed(KeyCode::KeyE) {
-            controller.zoom_by(1.0 + ZOOM_ADJUSTMENT_FACTOR);
         } else if input.pressed(KeyCode::KeyQ) {
+            // zoom in
+            controller.zoom_by(1.0 + ZOOM_ADJUSTMENT_FACTOR);
+        } else if input.pressed(KeyCode::KeyE) {
+            // zoom out
             controller.zoom_by(1.0 - ZOOM_ADJUSTMENT_FACTOR);
         } else if input.pressed(KeyCode::Digit8) {
             // only works if view is manual
