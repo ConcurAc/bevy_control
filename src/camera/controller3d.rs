@@ -170,7 +170,7 @@ impl CameraController3d {
                 let up = rotation * Quat::from_rotation_x(pitch) * self.yaw_axis;
                 up.y >= pitch_range
             }
-            None => true,
+            _ => true,
         }
     }
 }

@@ -131,7 +131,7 @@ pub enum CameraView2d {
 /// * `spatial_query` - Spatial query for collision detection (only used with avian3d feature)
 pub(crate) fn update_camera2d(
     mut controller_query: Query<(&Transform, &mut CameraController2d), Without<Camera2d>>,
-    mut camera_query: Query<(&mut Transform, &mut OrthographicProjection), With<Camera2d>>,
+    mut camera_query: Query<(&mut Transform, &mut Projection), With<Camera2d>>,
     time: Res<Time>,
 ) {
     for (controller_transform, controller) in controller_query.iter_mut() {
@@ -147,14 +147,19 @@ pub(crate) fn update_camera2d(
         // get time delta
         let dt = time.delta_secs();
 
-        // handle zoom
-        if controller.decay_rate.is_finite() {
-            projection
-                .scale
-                .smooth_nudge(&controller.scale, controller.decay_rate, dt);
-        } else {
-            projection.scale = controller.scale;
-        }
+        match projection.as_mut() {
+            Projection::Orthographic(projection) => {
+                // handle zoom
+                if controller.decay_rate.is_finite() {
+                    projection
+                        .scale
+                        .smooth_nudge(&controller.scale, controller.decay_rate, dt);
+                } else {
+                    projection.scale = controller.scale;
+                }
+            }
+            _ => (),
+        };
 
         // calculate target position with offset
         let target_translation = controller_transform.translation + controller.offset;
