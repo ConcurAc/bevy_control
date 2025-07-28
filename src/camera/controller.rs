@@ -159,7 +159,7 @@ impl CameraController {
     /// # Arguments
     /// * `delta_buffer` - Delta buffer to decay
     /// * `dt` - Time elapsed since last update in seconds
-    pub fn get_translation_delta(&mut self, delta_buffer: &mut CameraBuffer, dt: f32) -> Vec2 {
+    pub fn get_translation_delta(&self, delta_buffer: &mut CameraBuffer, dt: f32) -> Vec2 {
         if self.translation_decay_rate.is_finite() {
             delta_buffer.decay(self.translation_decay_rate, dt) * self.sensitivity
         } else {
@@ -185,13 +185,11 @@ impl CameraController {
 
 #[derive(Default, Clone)]
 pub enum CameraAnchor {
-    #[default]
-    /// Allows for camera position to be entirely independent from controller
-    Free,
-    /// Constrains camera to point with respect to controller for first person control
-    Point,
     /// Constrains camera to plane to allow for 2D panning control
     Plane { normal: Dir3 },
+    #[default]
+    /// Constrains camera to point with respect to controller for first person control
+    Point,
     /// Constrains camera to radial orbit around controller to allow for 3D third person control
     Orbit { distance: f32 },
 }
