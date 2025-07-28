@@ -3,17 +3,7 @@ name = "bevy_control"
 version = "0.1.0"
 edition = "2024"
 
-[features]
-default = ["2d", "3d"]
-2d = []
-avian2d = ["dep:avian2d"]
-3d = []
-avian3d = ["dep:avian3d"]
-
-
 [dependencies]
-avian2d = { version = "0.3.0", optional = true }
-avian3d = { version = "0.3.0", optional = true }
 bevy = "0.16.0"
 
 [[example]]
