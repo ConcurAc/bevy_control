@@ -68,13 +68,15 @@ fn switch_anchor(
 ) {
     for (entity, mut controller) in controllers.iter_mut() {
         if input.just_pressed(KeyCode::Digit1) {
+            controller.anchor = CameraAnchor::Yaw;
+        } else if input.just_pressed(KeyCode::Digit2) {
             let transform = transforms.get(controller.camera).unwrap();
             controller.anchor = CameraAnchor::Plane {
                 normal: transform.forward(),
             };
-        } else if input.just_pressed(KeyCode::Digit2) {
-            controller.anchor = CameraAnchor::Point;
         } else if input.just_pressed(KeyCode::Digit3) {
+            controller.anchor = CameraAnchor::Point;
+        } else if input.just_pressed(KeyCode::Digit4) {
             let [controller_transform, camera_transform] =
                 transforms.get_many([entity, controller.camera]).unwrap();
             let distance = controller_transform
@@ -124,9 +126,10 @@ fn setup_ui(mut commands: Commands) {
     commands.spawn(Node::DEFAULT).with_children(|parent| {
         parent.spawn(Text::new(
             "Camera Anchor Controls:\n\
-                1: Plane (2D or 3D RTS)\n\
-                2: Point (3D first person)\n\
-                3: Orbit (3D third person)",
+                1: Yaw (3D)\n\
+                2: Plane (2D Panning)\n\
+                3: Point (3D first person)\n\
+                4: Orbit (3D third person)",
         ));
     });
 }
