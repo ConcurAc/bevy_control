@@ -24,55 +24,64 @@ fn consume_buffers(
     mut camera_controllers: Query<(&CameraController, &mut CameraBuffer)>,
     mut transforms: Query<&mut Transform>,
     time: Res<Time>,
-) {
-    for (controller, mut camera_buffer) in camera_controllers.iter_mut() {
-        let mut camera_transform = match transforms.get_mut(controller.camera) {
-            Ok(transform) => transform,
-            Err(_) => continue,
-        };
-
+) -> Result<(), BevyError> {
+    for (controller, mut buffer) in camera_controllers.iter_mut() {
+        let mut camera_transform = transforms.get_mut(controller.camera)?;
         // get time delta
         let dt = time.delta_secs();
 
         match controller.anchor {
-            CameraAnchor::Plane { normal } => {
-                let delta = controller.get_translation_delta(&mut camera_buffer, dt);
+            CameraAnchor::Yaw => {
+                let delta = controller.get_translation_delta(&mut buffer, dt);
 
-                let displacement = controller.yaw_axis * delta.y
-                    + controller.yaw_axis.cross(normal.as_vec3()).normalize() * delta.x;
+                let displacement =
+                    controller.yaw_axis * delta.y + camera_transform.local_x() * delta.x;
+
+                camera_transform.translation += displacement;
+            }
+            CameraAnchor::Plane { normal } => {
+                let delta = controller.get_translation_delta(&mut buffer, dt);
+                let local_y = controller
+                    .yaw_axis
+                    .reject_from_normalized(normal.as_vec3())
+                    .normalize();
+                let local_x = controller.yaw_axis.cross(normal.as_vec3()).normalize();
+                let displacement = local_y * delta.y + local_x * delta.x;
 
                 camera_transform.translation += displacement;
             }
             _ => {
                 // get camera rotation delta
-                let delta = controller.get_rotation_delta(&mut camera_buffer, dt);
+                let delta = controller.get_rotation_delta(&mut buffer, dt);
 
                 // apply yaw rotation around world axis
-                camera_transform.rotate_axis(controller.yaw_axis, delta.x);
+                let yaw_rotation = Quat::from_axis_angle(controller.yaw_axis.as_vec3(), delta.x);
+                buffer.rotation = yaw_rotation * buffer.rotation;
 
                 // apply pitch rotation around local x axis
                 if controller.can_rotate_pitch(delta.y, camera_transform.rotation) {
-                    camera_transform.rotate_local_x(delta.y);
+                    buffer.rotation *= Quat::from_rotation_x(delta.y);
                 }
             }
         }
     }
+    Ok(())
 }
 
 /// Updates camera position and rotation each frame based on controller settings
 ///
 /// # Arguments
-/// * `camera_controllers` - Query for camera controller components and their transforms
-/// * `transforms` - Query for camera transforms to modify
+/// * `camera_controllers` - Query for camera controller and buffer
+/// * `camera_transforms` - Query for camera transforms to modify
+/// * `target_transforms` - Query for target transforms for camera targetting
 /// * `time` - Resource providing frame timing information
-/// * `spatial_query` - Optional collision detection system (avian3d feature only)
 fn update_camera(
-    camera_controllers: Query<(Entity, &CameraController)>,
+    camera_controllers: Query<(Entity, &CameraController, &CameraBuffer)>,
     mut camera_transforms: Query<&mut Transform, With<Camera>>,
     target_transforms: Query<&Transform, Without<Camera>>,
     time: Res<Time>,
 ) -> Result<(), BevyError> {
-    for (entity, controller) in camera_controllers.iter() {
+    for (entity, controller, buffer) in camera_controllers.iter() {
         let mut camera_transform = camera_transforms.get_mut(controller.camera)?;
         let controller_transform = target_transforms.get(entity)?;
 
@@ -122,19 +131,18 @@ fn update_camera(
 
                 // position camera at calculated distance behind target
                 camera_transform.translation =
-                    camera_transform.rotation * Vec3::ZERO.with_z(distance) + target_translation;
+                    buffer.rotation * Vec3::ZERO.with_z(distance) + target_translation;
             }
             _ => (),
         }
         match controller.view {
-            CameraView::Free => (),
-            CameraView::Target(target) => match controller.anchor {
-                CameraAnchor::Plane { normal: _ } => (),
-                _ => {
-                    let target_transform = target_transforms.get(target)?;
-                    camera_transform.look_at(target_transform.translation, controller.yaw_axis);
-                }
-            },
+            CameraView::Free => {
+                camera_transform.rotation = buffer.rotation;
+            }
+            CameraView::Target(target) => {
+                let target_transform = target_transforms.get(target)?;
+                camera_transform.look_at(target_transform.translation, controller.yaw_axis);
+            }
         }
     }
     Ok(())

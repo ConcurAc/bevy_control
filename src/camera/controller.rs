@@ -185,13 +185,15 @@ impl CameraController {
 
 #[derive(Default, Clone)]
 pub enum CameraAnchor {
-    /// Constrains camera to plane to allow for 2D panning control
-    Plane { normal: Dir3 },
     #[default]
     /// Constrains camera to point with respect to controller for first person control
     Point,
     /// Constrains camera to radial orbit around controller to allow for 3D third person control
     Orbit { distance: f32 },
+    /// projects y input onto yaw axis for translation
+    Yaw,
+    /// Constrains camera to plane to allow for 2D panning control across plane defined by normal
+    Plane { normal: Dir3 },
 }
 
 #[derive(Default, Clone)]
@@ -203,42 +205,47 @@ pub enum CameraView {
     Target(Entity),
 }
 
-/// A buffer component that stores and manages a 2D vector delta value
+/// A buffer component that stores and manages data for the controller to use
+/// contains fields that are expected to be frequently mutated
 #[derive(Component, Default)]
 pub struct CameraBuffer {
-    /// The current accumulated delta value
-    delta: Vec2,
+    /// The current accumulated 2D input from mouse or joystick
+    input: Vec2,
+    /// The current rotation that would allow camera to point the desired direction.
+    /// To allow for targetting functionallity, this variable is used for rotation
+    /// control independent of the current camera orientation
+    pub(crate) rotation: Quat,
 }
 
 impl CameraBuffer {
     /// Adds the given delta to the buffer's current value
     #[inline]
     pub fn update(&mut self, delta: Vec2) {
-        self.delta += delta;
+        self.input += delta;
     }
 
     /// Subtracts the given delta from the buffer's current value
     #[inline]
     pub fn consume(&mut self, delta: Vec2) {
-        self.delta -= delta;
+        self.input -= delta;
     }
 
     /// Resets the buffer's delta value to zero
     #[inline]
     pub fn reset(&mut self) {
-        self.delta = Vec2::ZERO;
+        self.input = Vec2::ZERO;
     }
 
     /// Returns the current delta value without modifying it
     #[inline]
     pub fn read(&self) -> Vec2 {
-        self.delta
+        self.input
     }
 
     /// Returns the current delta value and resets the buffer
     #[inline]
     pub fn take(&mut self) -> Vec2 {
-        let taken = self.delta;
+        let taken = self.input;
         self.reset();
         taken
     }
@@ -251,7 +258,7 @@ impl CameraBuffer {
     #[inline]
     pub fn decay(&mut self, rate: f32, dt: f32) -> Vec2 {
         let mut consumed = Vec2::ZERO;
-        consumed.smooth_nudge(&self.delta, rate, dt);
+        consumed.smooth_nudge(&self.input, rate, dt);
         self.consume(consumed);
         consumed
     }
