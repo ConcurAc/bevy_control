@@ -7,9 +7,9 @@ edition = "2024"
 bevy = "0.16.0"
 
 [[example]]
-name = "camera_2d"
-path = "examples/camera_2d.rs"
+name = "camera_anchors"
+path = "examples/camera_anchors.rs"
 
 [[example]]
-name = "camera_3d"
-path = "examples/camera_3d.rs"
+name = "camera_target"
+path = "examples/camera_target.rs"
