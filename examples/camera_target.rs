@@ -125,6 +125,24 @@ fn move_controller(
     }
 }
 
+fn move_target(
+    controller: Single<&CameraController>,
+    mut transforms: Query<&mut Transform>,
+    time: Res<Time>,
+) -> Result<(), BevyError> {
+    match controller.view {
+        CameraView::Free => (),
+        CameraView::Target(target) => {
+            let mut transform = transforms.get_mut(target)?;
+            transform.rotate_around(
+                Vec3::ZERO,
+                Quat::from_axis_angle(Vec3::Y, time.delta_secs()),
+            );
+        }
+    }
+    Ok(())
+}
+
 fn setup_ui(mut commands: Commands) {
     commands.spawn(Node::DEFAULT).with_children(|parent| {
         parent.spawn(Text::new(
@@ -163,24 +181,7 @@ fn setup_camera_controller(
         // add camera controller component
         CameraController::new(camera, CameraAnchor::default(), CameraView::Target(target))
             .with_pitch_range(f32::to_radians(90.0))
-            .with_smoothing(0.05),
+            .with_sensitivity(0.25)
+            .with_smoothing(0.1),
     ));
-}
-
-fn move_target(
-    controller: Single<&CameraController>,
-    mut transforms: Query<&mut Transform>,
-    time: Res<Time>,
-) -> Result<(), BevyError> {
-    match controller.view {
-        CameraView::Free => (),
-        CameraView::Target(target) => {
-            let mut transform = transforms.get_mut(target)?;
-            transform.rotate_around(
-                Vec3::ZERO,
-                Quat::from_axis_angle(Vec3::Y, time.delta_secs()),
-            );
-        }
-    }
-    Ok(())
 }

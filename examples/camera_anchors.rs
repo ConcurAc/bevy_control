@@ -152,6 +152,7 @@ fn setup_camera_controller(
         // add camera controller component
         CameraController::new(camera, CameraAnchor::default(), CameraView::Free)
             .with_pitch_range(f32::to_radians(90.0))
-            .with_smoothing(0.05),
+            .with_sensitivity(0.25)
+            .with_smoothing(0.1),
     ));
 }
