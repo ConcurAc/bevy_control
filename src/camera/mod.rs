@@ -22,11 +22,11 @@ impl Plugin for CameraPlugin {
 
 fn consume_buffers(
     mut camera_controllers: Query<(&CameraController, &mut CameraBuffer)>,
-    mut transforms: Query<&mut Transform>,
+    mut camera_transforms: Query<&mut Transform, With<Camera>>,
     time: Res<Time>,
 ) -> Result<(), BevyError> {
     for (controller, mut buffer) in camera_controllers.iter_mut() {
-        let mut camera_transform = transforms.get_mut(controller.camera)?;
+        let mut camera_transform = camera_transforms.get_mut(controller.camera)?;
         // get time delta
         let dt = time.delta_secs();
 
