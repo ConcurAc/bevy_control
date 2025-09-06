@@ -1,25 +1,15 @@
 [package]
 name = "bevy_control"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
-[features]
-default = ["2d", "3d"]
-2d = []
-avian2d = ["dep:avian2d"]
-3d = []
-avian3d = ["dep:avian3d"]
-
-
 [dependencies]
-avian2d = { version = "0.3.0", optional = true }
-avian3d = { version = "0.3.0", optional = true }
 bevy = "0.16.0"
 
 [[example]]
-name = "camera_2d"
-path = "examples/camera_2d.rs"
+name = "camera_anchors"
+path = "examples/camera_anchors.rs"
 
 [[example]]
-name = "camera_3d"
-path = "examples/camera_3d.rs"
+name = "camera_target"
+path = "examples/camera_target.rs"

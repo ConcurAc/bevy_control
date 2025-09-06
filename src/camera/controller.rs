@@ -1,18 +1,15 @@
 use bevy::prelude::*;
 
-#[cfg(feature = "avian3d")]
-use avian3d::prelude::*;
-
-use crate::input::DeltaBuffer;
-
 /// A camera controller component that provides smooth camera movement and rotation
 #[derive(Component)]
-#[require(DeltaBuffer)]
-pub struct CameraController3d {
+#[require(CameraBuffer)]
+pub struct CameraController {
     /// Entity ID of the camera being controlled
     pub camera: Entity,
+    /// Constrain camera to either plane for 2D or orbit for 3D control
+    pub anchor: CameraAnchor,
     /// View configuration for the camera
-    pub view: CameraView3d,
+    pub view: CameraView,
     /// Sensitivity of the camera controller
     pub sensitivity: f32,
     /// Offset position from the target in world space
@@ -27,7 +24,7 @@ pub struct CameraController3d {
     pitch_range: Option<f32>,
 }
 
-impl CameraController3d {
+impl CameraController {
     /// Creates a new CameraController instance with default settings:
     /// - Sensitivity: 1.0
     /// - No offset
@@ -38,9 +35,10 @@ impl CameraController3d {
     /// # Arguments
     /// * `camera` - Entity ID of the camera to control
     /// * `view` - The initial view configuration for the camera
-    pub fn new(camera: Entity, view: CameraView3d) -> Self {
+    pub fn new(camera: Entity, anchor: CameraAnchor, view: CameraView) -> Self {
         Self {
             camera,
+            anchor,
             view,
 
             sensitivity: 1.0,
@@ -52,6 +50,16 @@ impl CameraController3d {
             yaw_axis: Dir3::Y,
             pitch_range: None,
         }
+    }
+
+    #[inline]
+    pub fn get_translation_decay_rate(&self) -> f32 {
+        self.translation_decay_rate
+    }
+
+    #[inline]
+    pub fn get_rotation_decay_rate(&self) -> f32 {
+        self.rotation_decay_rate
     }
 
     /// Sets the sensitivity multiplier for all movement
@@ -137,7 +145,7 @@ impl CameraController3d {
     /// # Arguments
     /// * `delta_buffer` - Delta buffer to decay
     /// * `dt` - Time elapsed since last update in seconds
-    pub fn get_rotation_delta(&self, delta_buffer: &mut DeltaBuffer, dt: f32) -> Vec2 {
+    pub fn get_rotation_delta(&self, delta_buffer: &mut CameraBuffer, dt: f32) -> Vec2 {
         if self.rotation_decay_rate.is_finite() {
             delta_buffer.decay(self.rotation_decay_rate, dt) * self.sensitivity
         } else {
@@ -151,7 +159,7 @@ impl CameraController3d {
     /// # Arguments
     /// * `delta_buffer` - Delta buffer to decay
     /// * `dt` - Time elapsed since last update in seconds
-    pub fn get_translation_delta(&mut self, delta_buffer: &mut DeltaBuffer, dt: f32) -> Vec2 {
+    pub fn get_translation_delta(&self, delta_buffer: &mut CameraBuffer, dt: f32) -> Vec2 {
         if self.translation_decay_rate.is_finite() {
             delta_buffer.decay(self.translation_decay_rate, dt) * self.sensitivity
         } else {
@@ -175,124 +183,83 @@ impl CameraController3d {
     }
 }
 
-/// Defines how the camera views its target
-#[derive(PartialEq, Clone)]
-pub enum CameraView3d {
-    /// Disables influence over camera. To be handled by another system
-    Manual,
-    /// Translates camera orthogonally to current facing direction
-    Perspective,
-    /// Camera follows target from a specified distance
-    Follow {
-        /// Distance from target to camera
-        distance: f32,
-        /// Distance behind camera to check for collisions
-        #[cfg(feature = "avian3d")]
-        back_distance: f32,
-        /// Filter for collision detection
-        #[cfg(feature = "avian3d")]
-        collision_filter: SpatialQueryFilter,
-    },
+#[derive(Default, Clone)]
+pub enum CameraAnchor {
+    #[default]
+    /// Constrains camera to point with respect to controller for first person control
+    Point,
+    /// Constrains camera to radial orbit around controller to allow for 3D third person control
+    Orbit { distance: f32 },
+    /// projects y input onto yaw axis for translation
+    Yaw,
+    /// Constrains camera to plane to allow for 2D panning control across plane defined by normal
+    Plane { normal: Dir3 },
 }
 
-/// Updates camera position and rotation each frame based on controller settings
-///
-/// # Arguments
-/// * `camera_controllers` - Query for camera controller components and their transforms
-/// * `transforms` - Query for camera transforms to modify
-/// * `time` - Resource providing frame timing information
-/// * `spatial_query` - Optional collision detection system (avian3d feature only)
-pub(crate) fn update_camera3d(
-    mut camera_controllers: Query<
-        (&Transform, &CameraController3d, &mut DeltaBuffer),
-        Without<Camera3d>,
-    >,
-    mut transforms: Query<&mut Transform, With<Camera3d>>,
-    time: Res<Time>,
-    #[cfg(feature = "avian3d")] spatial_query: SpatialQuery,
-) {
-    for (controller_transform, controller, mut delta_buffer) in camera_controllers.iter_mut() {
-        // skip if camera is manually controlled
-        if controller.view == CameraView3d::Manual {
-            continue;
-        }
+#[derive(Default, Clone)]
+pub enum CameraView {
+    #[default]
+    /// Allows for camera view to be dependent on input
+    Free,
+    /// Constrains camera to look at an Entity
+    Target(Entity),
+}
 
-        let mut camera_transform = match transforms.get_mut(controller.camera) {
-            Ok(transform) => transform,
-            Err(_) => continue,
-        };
+/// A buffer component that stores and manages data for the controller to use
+/// contains fields that are expected to be frequently mutated
+#[derive(Component, Default)]
+pub struct CameraBuffer {
+    /// The current accumulated 2D input from mouse or joystick
+    input: Vec2,
+    /// The current rotation that would allow camera to point the desired direction.
+    /// To allow for targetting functionallity, this variable is used for rotation
+    /// control independent of the current camera orientation
+    pub(crate) rotation: Quat,
+}
 
-        // get time delta
-        let dt = time.delta_secs();
+impl CameraBuffer {
+    /// Adds the given delta to the buffer's current value
+    #[inline]
+    pub fn update(&mut self, delta: Vec2) {
+        self.input += delta;
+    }
 
-        // get camera rotation delta
-        let delta = controller.get_rotation_delta(&mut delta_buffer, dt);
+    /// Subtracts the given delta from the buffer's current value
+    #[inline]
+    pub fn consume(&mut self, delta: Vec2) {
+        self.input -= delta;
+    }
 
-        // apply yaw rotation around world axis
-        camera_transform.rotate_axis(controller.yaw_axis, delta.x);
+    /// Resets the buffer's delta value to zero
+    #[inline]
+    pub fn reset(&mut self) {
+        self.input = Vec2::ZERO;
+    }
 
-        // apply pitch rotation around local x axis
-        if controller.can_rotate_pitch(delta.y, camera_transform.rotation) {
-            camera_transform.rotate_local_x(delta.y);
-        }
+    /// Returns the current delta value without modifying it
+    #[inline]
+    pub fn read(&self) -> Vec2 {
+        self.input
+    }
 
-        // calculate target position with offset
-        let local_offset = controller_transform.rotation * controller.offset;
-        let target_translation = controller_transform.translation + local_offset;
+    /// Returns the current delta value and resets the buffer
+    #[inline]
+    pub fn take(&mut self) -> Vec2 {
+        let taken = self.input;
+        self.reset();
+        taken
+    }
 
-        match &controller.view {
-            CameraView3d::Perspective => {
-                if controller.translation_decay_rate.is_finite() {
-                    // apply smoothed translation for perspective view
-                    let target_distance = 0.0;
-
-                    let mut distance = camera_transform.translation.distance(target_translation);
-
-                    distance.smooth_nudge(&target_distance, controller.translation_decay_rate, dt);
-
-                    camera_transform.translation = camera_transform.rotation
-                        * Vec3::ZERO.with_z(distance)
-                        + target_translation;
-                } else {
-                    // snap to target position when smoothing is disabled
-                    camera_transform.translation = target_translation;
-                }
-            }
-            CameraView3d::Follow {
-                distance,
-                #[cfg(feature = "avian3d")]
-                back_distance,
-                #[cfg(feature = "avian3d")]
-                collision_filter,
-            } => {
-                // calculate target distance with smoothing if enabled
-                let target_distance = if controller.translation_decay_rate.is_finite() {
-                    let mut current = camera_transform.translation.distance(target_translation);
-                    current.smooth_nudge(distance, controller.translation_decay_rate, dt);
-                    current
-                } else {
-                    *distance
-                };
-
-                // handle collision detection if avian3d feature is enabled
-                #[cfg(feature = "avian3d")]
-                let target_distance = match spatial_query.cast_ray(
-                    target_translation,
-                    camera_transform.back(),
-                    target_distance + back_distance,
-                    false,
-                    collision_filter,
-                ) {
-                    Some(hit) => target_distance.clamp(0., hit.distance) - back_distance,
-                    None => target_distance,
-                };
-
-                // position camera at calculated distance behind target
-                camera_transform.translation = camera_transform.rotation
-                    * Vec3::ZERO.with_z(target_distance)
-                    + target_translation;
-            }
-            _ => (),
-        }
+    /// Reduces the delta value using smooth interpolation
+    ///
+    /// # Arguments
+    /// * `rate` - The rate at which to decay the value
+    /// * `dt` - The time increment
+    #[inline]
+    pub fn decay(&mut self, rate: f32, dt: f32) -> Vec2 {
+        let mut consumed = Vec2::ZERO;
+        consumed.smooth_nudge(&self.input, rate, dt);
+        self.consume(consumed);
+        consumed
     }
 }

@@ -2,25 +2,16 @@ use bevy::{input::mouse::MouseMotion, prelude::*};
 
 use bevy_control::prelude::*;
 
-#[cfg(feature = "avian3d")]
-use avian3d::prelude::*;
-
 fn main() {
     App::new()
-        .add_plugins((
-            DefaultPlugins,
-            CameraPlugin,
-            #[cfg(feature = "avian3d")]
-            PhysicsPlugins::default(),
-        ))
+        .add_plugins((DefaultPlugins, CameraPlugin))
         .add_systems(
             Startup,
             (setup_ui, setup_environment, setup_camera_controller),
         )
-        .add_systems(Update, (update_buffer, move_controller))
         .add_systems(
-            PostUpdate,
-            switch_view.before(TransformSystem::TransformPropagate),
+            Update,
+            (update_buffer, move_controller, switch_anchor, move_target),
         )
         .run();
 }
@@ -37,16 +28,11 @@ fn setup_environment(
     commands.spawn((
         Mesh3d(meshes.add(Plane3d::new(Vec3::Y, Vec2::new(100.0, 100.0)))),
         MeshMaterial3d(materials.add(Color::WHITE)),
-        #[cfg(feature = "avian3d")]
-        (Collider::half_space(Vec3::Y), RigidBody::Static),
     ));
 
     // Create a shared cube mesh that will be reused
     let cube = Cuboid::new(1.0, 1.0, 1.0);
     let cube_mesh = meshes.add(cube);
-
-    #[cfg(feature = "avian3d")]
-    let cube_collider = Collider::from(cube);
 
     // Spawn cubes in a circle
     let total = 8;
@@ -60,14 +46,12 @@ fn setup_environment(
             MeshMaterial3d(materials.add(Color::BLACK.lighter(n))),
             // Position cube using trigonometry for circular arrangement
             Transform::from_xyz(angle.cos() * distance, 0.5, angle.sin() * distance),
-            #[cfg(feature = "avian3d")]
-            (cube_collider.clone(), RigidBody::Static),
         ));
     }
 }
 
 fn update_buffer(
-    mut query: Query<&mut DeltaBuffer>,
+    mut query: Query<&mut CameraBuffer>,
     mut mouse: EventReader<MouseMotion>,
     time: Res<Time>,
 ) {
@@ -80,62 +64,36 @@ fn update_buffer(
     }
 }
 
-fn switch_view(
+fn switch_anchor(
     input: Res<ButtonInput<KeyCode>>,
-    mut controllers: Query<(Entity, &mut CameraController3d, &mut DeltaBuffer)>,
-    mut transforms: Query<&mut Transform>,
-    time: Res<Time>,
+    mut controllers: Query<(Entity, &mut CameraController)>,
+    transforms: Query<&Transform>,
 ) {
-    for (_entity, mut controller, mut delta_buffer) in controllers.iter_mut() {
+    for (entity, mut controller) in controllers.iter_mut() {
         if input.just_pressed(KeyCode::Digit1) {
-            controller.view = CameraView3d::Perspective;
+            controller.anchor = CameraAnchor::Yaw;
         } else if input.just_pressed(KeyCode::Digit2) {
-            controller.view = CameraView3d::Follow {
-                distance: 10.0,
-                #[cfg(feature = "avian3d")]
-                back_distance: 0.2,
-                #[cfg(feature = "avian3d")]
-                collision_filter: SpatialQueryFilter::from_excluded_entities([_entity]),
+            let transform = transforms.get(controller.camera).unwrap();
+            controller.anchor = CameraAnchor::Plane {
+                normal: transform.forward(),
             };
-        } else if input.pressed(KeyCode::Digit8) {
-            // only works if view is manual
-            controller.view = CameraView3d::Manual;
-            // custom panning
-            let mut camera_transform = transforms.get_mut(controller.camera).unwrap();
-
-            let delta = controller.get_translation_delta(&mut delta_buffer, time.delta_secs());
-            let translation = camera_transform.rotation * Vec3::new(delta.x, -delta.y, 0.0);
-
-            camera_transform.translation += translation;
-        } else if input.pressed(KeyCode::Digit9) {
-            // only works if view is manual
-            controller.view = CameraView3d::Manual;
-            // custom pivot
-            let mut camera_transform = transforms.get_mut(controller.camera).unwrap();
-
-            let delta = controller.get_rotation_delta(&mut delta_buffer, time.delta_secs());
-
-            // apply yaw rotation
-            camera_transform.rotate_axis(controller.yaw_axis, delta.x);
-
-            // apply pitch rotation (around local x axis)
-            if controller.can_rotate_pitch(delta.y, camera_transform.rotation) {
-                camera_transform.rotate_local_x(delta.y);
-            }
-        } else if input.just_pressed(KeyCode::Digit0) {
-            // set to manual to do nothing
-            controller.view = CameraView3d::Manual;
-        } else if controller.view == CameraView3d::Manual {
-            // manually consume all the unused input in the buffer
-            delta_buffer.reset();
+        } else if input.just_pressed(KeyCode::Digit3) {
+            controller.anchor = CameraAnchor::Point;
+        } else if input.just_pressed(KeyCode::Digit4) {
+            let [controller_transform, camera_transform] =
+                transforms.get_many([entity, controller.camera]).unwrap();
+            let distance = controller_transform
+                .translation
+                .distance(camera_transform.translation);
+            controller.anchor = CameraAnchor::Orbit { distance };
         }
     }
 }
 
 fn move_controller(
     input: Res<ButtonInput<KeyCode>>,
-    mut controllers: Query<(&CameraController3d, &mut Transform), Without<Camera3d>>,
-    camera: Query<&Transform, With<Camera3d>>,
+    mut controllers: Query<(&CameraController, &mut Transform), Without<Camera>>,
+    camera: Query<&Transform, With<Camera>>,
     time: Res<Time>,
 ) {
     for (controller, mut transform) in controllers.iter_mut() {
@@ -167,15 +125,32 @@ fn move_controller(
     }
 }
 
+fn move_target(
+    controller: Single<&CameraController>,
+    mut transforms: Query<&mut Transform>,
+    time: Res<Time>,
+) -> Result<(), BevyError> {
+    match controller.view {
+        CameraView::Free => (),
+        CameraView::Target(target) => {
+            let mut transform = transforms.get_mut(target)?;
+            transform.rotate_around(
+                Vec3::ZERO,
+                Quat::from_axis_angle(Vec3::Y, time.delta_secs()),
+            );
+        }
+    }
+    Ok(())
+}
+
 fn setup_ui(mut commands: Commands) {
     commands.spawn(Node::DEFAULT).with_children(|parent| {
         parent.spawn(Text::new(
-            "Camera Controls:\n\
-                1: Perspective View\n\
-                2: Follow View\n\
-                8 (hold): Manual Pan Camera\n\
-                9 (hold): Manual Rotate Camera\n\
-                0: Manual View Mode",
+            "Camera Anchor Controls:\n\
+                1: Yaw (3D)\n\
+                2: Plane (2D Panning)\n\
+                3: Point (3D first person)\n\
+                4: Orbit (3D third person)",
         ));
     });
 }
@@ -191,14 +166,22 @@ fn setup_camera_controller(
     let cube = Cuboid::new(0.5, 0.5, 0.5);
     let cube_mesh = meshes.add(cube);
 
+    let target = commands
+        .spawn((
+            Transform::from_xyz(0.0, 0.5, 10.0),
+            Mesh3d(cube_mesh.clone()),
+            MeshMaterial3d(materials.add(Color::linear_rgb(10.0, 5.0, 0.3))),
+        ))
+        .id();
+
     commands.spawn((
         Transform::from_xyz(0.0, 0.5, 0.0),
         Mesh3d(cube_mesh),
         MeshMaterial3d(materials.add(Color::linear_rgb(0.3, 10.0, 0.3))),
         // add camera controller component
-        CameraController3d::new(camera, CameraView3d::Perspective)
+        CameraController::new(camera, CameraAnchor::default(), CameraView::Target(target))
             .with_pitch_range(f32::to_radians(90.0))
             .with_sensitivity(0.25)
-            .with_smoothing(0.05),
+            .with_smoothing(0.1),
     ));
 }
